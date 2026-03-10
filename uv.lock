@@ -38,7 +38,7 @@ name = "bayesian-if"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "credence" },
+    { name = "credence-agents" },
     { name = "numpy" },
 ]
 
@@ -67,7 +67,7 @@ textworld = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "credence" },
+    { name = "credence-agents" },
     { name = "httpx" },
     { name = "numpy" },
     { name = "pytest" },
@@ -78,7 +78,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bayesian-if", extras = ["jericho", "ollama", "dev"], marker = "extra == 'all'" },
-    { name = "credence", editable = "../credence" },
+    { name = "credence-agents", editable = "../credence" },
     { name = "httpx", marker = "extra == 'ollama'", specifier = ">=0.25" },
     { name = "jericho", marker = "extra == 'jericho'", specifier = ">=3.0" },
     { name = "numpy", specifier = ">=1.24" },
@@ -91,7 +91,7 @@ provides-extras = ["jericho", "textworld", "ollama", "dev", "all"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "credence", editable = "../credence" },
+    { name = "credence-agents", editable = "../credence" },
     { name = "httpx", specifier = ">=0.25" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "pytest", specifier = ">=7.4" },
@@ -377,7 +377,7 @@ toml = [
 ]
 
 [[package]]
-name = "credence"
+name = "credence-agents"
 version = "0.1.0"
 source = { editable = "../credence" }
 dependencies = [

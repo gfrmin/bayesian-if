@@ -2,9 +2,11 @@
 name = "bayesian-if"
 version = "0.1.0"
 description = "Bayesian decision-theoretic Interactive Fiction agent using Credence"
+license = "AGPL-3.0-only"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "credence",
+    "credence-agents>=0.1.0",
     "numpy>=1.24",
 ]
 
@@ -24,6 +26,10 @@ all = [
 [project.scripts]
 bayesian-if = "bayesian_if.play:main"
 
+[project.urls]
+Homepage = "https://github.com/gfrmin/bayesian-if"
+Repository = "https://github.com/gfrmin/bayesian-if"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -38,11 +44,11 @@ testpaths = ["tests"]
 line-length = 99
 
 [tool.uv.sources]
-credence = { path = "../credence", editable = true }
+credence-agents = { path = "../credence", editable = true }
 
 [dependency-groups]
 dev = [
-    "credence",
+    "credence-agents",
     "httpx>=0.25",
     "numpy>=1.24",
     "pytest-cov>=6.1.1",
