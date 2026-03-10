@@ -36,6 +36,7 @@ class IFTool(ABC):
         valid_actions: list[str],
         *,
         history: list[tuple[str, str]] | None = None,
+        failed_actions: set[str] | None = None,
     ) -> int | None:
         """Query this tool and return a recommended action index, or None."""
         ...
@@ -144,6 +145,7 @@ class LookTool(IFTool):
         valid_actions: list[str],
         *,
         history: list[tuple[str, str]] | None = None,
+        failed_actions: set[str] | None = None,
     ) -> int | None:
         snapshot = world.save()
         try:
@@ -181,9 +183,10 @@ class ExamineTool(IFTool):
         valid_actions: list[str],
         *,
         history: list[tuple[str, str]] | None = None,
+        failed_actions: set[str] | None = None,
     ) -> int | None:
         # Find an object to examine from valid actions or observation text
-        target = self._pick_target(observation, valid_actions)
+        target = self._pick_target(observation, valid_actions, history=history)
         if target is None:
             return None
 
@@ -197,16 +200,33 @@ class ExamineTool(IFTool):
             world.restore(snapshot)
 
     @staticmethod
-    def _pick_target(observation: Observation, valid_actions: list[str]) -> str | None:
-        """Pick an object to examine — prefer items mentioned in actions."""
-        # Look for nouns in valid actions that suggest examinable objects
+    def _pick_target(
+        observation: Observation,
+        valid_actions: list[str],
+        *,
+        history: list[tuple[str, str]] | None = None,
+    ) -> str | None:
+        """Pick an object to examine — prefer novel items mentioned in actions."""
+        # Collect ALL candidate targets from valid actions
+        candidates: list[str] = []
         for action in valid_actions:
             match = re.match(
                 r"(?:take|examine|open|push|pull|turn|read)\s+(.+)", action, re.I
             )
             if match:
-                return match.group(1).strip()
-        # Phase 1: consider inventory items as examination targets
+                candidates.append(match.group(1).strip())
+
+        # Filter out targets that appear in recent history actions
+        if history and candidates:
+            tried = {act.lower() for act, _ in history}
+            novel = [c for c in candidates if not any(c.lower() in t for t in tried)]
+            if novel:
+                candidates = novel
+
+        if candidates:
+            return candidates[0]
+
+        # Consider inventory items as examination targets
         if observation.inventory:
             return observation.inventory[0]
         # Fallback: look for nouns in observation text
@@ -237,6 +257,7 @@ class InventoryTool(IFTool):
         valid_actions: list[str],
         *,
         history: list[tuple[str, str]] | None = None,
+        failed_actions: set[str] | None = None,
     ) -> int | None:
         # Phase 1: use structured inventory when available
         if observation.inventory:
@@ -287,13 +308,14 @@ class LLMAdvisorTool(IFTool):
         valid_actions: list[str],
         *,
         history: list[tuple[str, str]] | None = None,
+        failed_actions: set[str] | None = None,
     ) -> int | None:
         if not valid_actions:
             return None
 
         actions_str = "\n".join(f"  {i}: {a}" for i, a in enumerate(valid_actions))
 
-        # Phase 2: build rich context from structured observation + history
+        # Build rich context from structured observation + history
         context_parts: list[str] = []
         if observation.location:
             context_parts.append(f"Current location: {observation.location}")
@@ -304,6 +326,12 @@ class LLMAdvisorTool(IFTool):
         if history:
             history_lines = [f"  > {act} -> {res}" for act, res in history[-5:]]
             context_parts.append("Recent history:\n" + "\n".join(history_lines))
+        if failed_actions:
+            context_parts.append(
+                "Actions already tried without success: "
+                + ", ".join(sorted(failed_actions))
+                + "\nAvoid repeating these."
+            )
 
         context = "\n".join(context_parts)
 

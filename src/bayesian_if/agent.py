@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 
 from credence import BayesianAgent, ScoringRule
 
-from bayesian_if.categories import CATEGORIES, make_if_category_infer_fn
+from bayesian_if.categories import CATEGORIES, infer_category_hint, make_if_category_infer_fn
 from bayesian_if.reward import attribute_reward
 from bayesian_if.tools import DEFAULT_TOOLS, IFTool
 from bayesian_if.world import Observation, World
@@ -59,7 +59,7 @@ class IFAgent:
         categories: tuple[str, ...] = CATEGORIES,
         category_infer_fn: Callable[[str], NDArray] | None = None,
         scoring: ScoringRule = IF_SCORING,
-        forgetting: float = 1.0,
+        forgetting: float = 0.85,
         verbose: bool = False,
     ) -> None:
         self.world = world
@@ -68,6 +68,7 @@ class IFAgent:
         self.scoring = scoring
         self.verbose = verbose
         self._history: list[tuple[str, str]] = []
+        self._failed_actions: dict[str | None, set[str]] = {}
 
         if category_infer_fn is None:
             category_infer_fn = make_if_category_infer_fn(categories)
@@ -93,26 +94,45 @@ class IFAgent:
                 reward=0.0, cumulative_score=observation.score,
             )
 
+        # Filter out actions that failed at this location
+        location = observation.location
+        failed_here = self._failed_actions.get(location, set())
+        effective = [a for a in valid_actions if a not in failed_here] or valid_actions
+
+        # If only one action remains, skip VOI — nothing to decide
+        if len(effective) == 1:
+            chosen = effective[0]
+            return chosen, StepRecord(
+                step=0, observation_text=observation.text,
+                valid_actions=valid_actions, chosen_action=chosen,
+                tools_queried=(), confidence=1.0,
+                reward=0.0, cumulative_score=observation.score,
+            )
+
         # Build the tool query function that BayesianAgent will call
         recent_history = self._history[-5:] if self._history else None
 
         def tool_query_fn(tool_idx: int) -> int | None:
             return self.if_tools[tool_idx].query(
-                self.world, observation, valid_actions, history=recent_history
+                self.world, observation, effective,
+                history=recent_history, failed_actions=failed_here,
             )
+
+        # Infer category hint from structured state
+        category_hint = infer_category_hint(observation)
 
         result = self.bayesian.solve_question(
             question_text=observation.text,
-            candidates=tuple(valid_actions),
-            category_hint=None,
+            candidates=tuple(effective),
+            category_hint=category_hint,
             tool_query_fn=tool_query_fn,
         )
 
-        if result.answer is not None and result.answer < len(valid_actions):
-            chosen_action = valid_actions[result.answer]
+        if result.answer is not None and result.answer < len(effective):
+            chosen_action = effective[result.answer]
         else:
             # Abstain → take a safe action
-            chosen_action = _safe_action(valid_actions)
+            chosen_action = _safe_action(effective, failed=failed_here)
 
         record = StepRecord(
             step=0,  # filled in by play_game
@@ -131,6 +151,7 @@ class IFAgent:
         """Play a full game, returning trace and final score."""
         obs = self.world.reset()
         self._history = []
+        self._failed_actions = {}
         steps: list[StepRecord] = []
 
         for step_num in range(1, max_steps + 1):
@@ -140,6 +161,12 @@ class IFAgent:
 
             # Track history for LLM context
             self._history.append((action, obs.text[:100]))
+
+            # Update failed-action memory
+            if reward > 0:
+                self._failed_actions.pop(prev_obs.location, None)
+            elif reward <= 0 and obs.score == prev_obs.score:
+                self._failed_actions.setdefault(prev_obs.location, set()).add(action)
 
             # Attribute reward for reliability learning
             was_correct = attribute_reward(reward, prev_obs, obs)
@@ -172,12 +199,20 @@ class IFAgent:
         )
 
 
-def _safe_action(valid_actions: list[str]) -> str:
+def _safe_action(valid_actions: list[str], failed: set[str] | None = None) -> str:
     """Pick a safe fallback action when the agent abstains."""
     import random
 
+    failed = failed or set()
+    # Prefer untried movement — highest option value when local actions failed
+    moves = [a for a in valid_actions if a.startswith("go ") and a not in failed]
+    if moves:
+        return random.choice(moves)
+    # Then standard safe verbs, excluding failed
     for verb in ("look", "inventory", "wait"):
         for action in valid_actions:
-            if action.lower().startswith(verb):
+            if action.lower().startswith(verb) and action not in failed:
                 return action
-    return random.choice(valid_actions)
+    # Absolute fallback
+    unfailed = [a for a in valid_actions if a not in failed]
+    return random.choice(unfailed) if unfailed else random.choice(valid_actions)

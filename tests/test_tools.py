@@ -375,3 +375,55 @@ def test_ollama_normalize_trailing_slash():
     from bayesian_if.ollama import _normalize_base_url
 
     assert _normalize_base_url("http://localhost:11434/") == "http://localhost:11434"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: ExamineTool novelty filtering
+# ---------------------------------------------------------------------------
+
+def test_examine_tool_avoids_recently_examined():
+    """ExamineTool should skip targets that appear in recent history."""
+    obs = Observation(text="A room.", score=0, location="Start Room")
+    actions = ["examine insect", "examine key", "go north"]
+    history = [("examine insect", "It's a bug.")]
+
+    target = ExamineTool._pick_target(obs, actions, history=history)
+    assert target == "key"  # "insect" was already examined
+
+
+def test_examine_tool_fallback_when_all_examined():
+    """ExamineTool should still return something when all targets were tried."""
+    obs = Observation(text="A room.", score=0, location="Start Room")
+    actions = ["examine insect", "examine key", "go north"]
+    history = [("examine insect", "It's a bug."), ("examine key", "A rusty key.")]
+
+    target = ExamineTool._pick_target(obs, actions, history=history)
+    # All examined → falls back to full candidates list
+    assert target in ("insect", "key")
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: LLM prompt includes failed actions
+# ---------------------------------------------------------------------------
+
+def test_llm_prompt_includes_failed_actions():
+    """LLM prompt should mention failed actions to avoid repeating them."""
+    prompts: list[str] = []
+
+    def capture_prompt(prompt: str) -> str:
+        prompts.append(prompt)
+        return "0"
+
+    world = MockWorld()
+    world.reset()
+    obs = Observation(text="A room.", score=0)
+    actions = ["go north", "take key"]
+    failed = {"examine insect", "take insect"}
+
+    tool = LLMAdvisorTool(generate_fn=capture_prompt)
+    tool.query(world, obs, actions, failed_actions=failed)
+
+    assert len(prompts) == 1
+    assert "examine insect" in prompts[0]
+    assert "take insect" in prompts[0]
+    assert "Avoid repeating" in prompts[0]

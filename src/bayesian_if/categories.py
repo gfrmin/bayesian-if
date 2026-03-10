@@ -31,6 +31,37 @@ _CATEGORY_PATTERNS: dict[str, list[re.Pattern[str]]] = {
 }
 
 
+def infer_category_hint(obs: object) -> str | None:
+    """Infer a category hint from structured observation state.
+
+    Returns a category name if confident, else None. The hint gets a +9.0 boost
+    in credence's solve_question.
+    """
+    # Check inventory for puzzle-related items
+    inventory = getattr(obs, "inventory", ())
+    if inventory:
+        puzzle_items = re.compile(r"\b(key|lever|gem|ring|orb|crystal|rod|wand)\b", re.I)
+        for item in inventory:
+            if puzzle_items.search(item):
+                return "puzzle"
+
+    text = getattr(obs, "text", "")
+    location = getattr(obs, "location", "") or ""
+    combined = f"{text} {location}"
+
+    # Combat signals are high-priority
+    if re.search(r"\b(attack|fight|monster|troll|sword|kill)\b", combined, re.I):
+        return "combat"
+    # Dialogue signals
+    if re.search(r"\b(says?|asks?|tells?|speak|talk)\b", combined, re.I):
+        return "dialogue"
+    # Exploration signals from location
+    if re.search(r"\b(corridor|passage|path|trail|road|bridge)\b", combined, re.I):
+        return "exploration"
+
+    return None
+
+
 def make_if_category_infer_fn(
     categories: tuple[str, ...] = CATEGORIES,
 ) -> Callable[[str], NDArray[np.float64]]:

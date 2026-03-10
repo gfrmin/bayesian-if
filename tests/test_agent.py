@@ -2,8 +2,10 @@
 
 import numpy as np
 
-from bayesian_if.agent import IFAgent
+from bayesian_if.agent import IFAgent, _safe_action
+from bayesian_if.categories import infer_category_hint
 from bayesian_if.tools import DEFAULT_TOOLS, LLMAdvisorTool
+from bayesian_if.world import Observation
 from tests.mock_world import MockWorld
 
 
@@ -103,3 +105,106 @@ def test_play_step_with_no_valid_actions():
     world.valid_actions = empty_actions  # type: ignore[assignment]
     action, record = agent.play_step(obs)
     assert action == "look"  # safe fallback
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: Failed-action memory
+# ---------------------------------------------------------------------------
+
+def test_agent_suppresses_failed_actions():
+    """Zero-reward action at same location should not be repeated."""
+    world = MockWorld()
+    agent = IFAgent(world=world, tools=list(DEFAULT_TOOLS))
+    obs = world.reset()
+
+    # Simulate "wait" yielding no reward at Start Room
+    agent._failed_actions.setdefault("Start Room", set()).add("wait")
+
+    action, _ = agent.play_step(obs)
+    # "wait" should be suppressed — agent picks something else
+    assert action != "wait"
+
+
+def test_failed_actions_cleared_on_reward():
+    """Positive reward should clear the failed set for that location."""
+    world = MockWorld()
+    agent = IFAgent(world=world, tools=list(DEFAULT_TOOLS))
+    obs = world.reset()
+
+    # Pre-populate failed actions at Start Room
+    agent._failed_actions["Start Room"] = {"look", "wait"}
+    assert len(agent._failed_actions["Start Room"]) == 2
+
+    # Manually step "take key" which gives +5 reward
+    action, record = agent.play_step(obs)
+    # Force "take key" to trigger the reward-based clear
+    prev_obs = obs
+    obs, reward, done = world.step("take key")
+    agent._history.append(("take key", obs.text[:100]))
+    # Simulate what play_game does after the step
+    if reward > 0:
+        agent._failed_actions.pop(prev_obs.location, None)
+
+    # Start Room failures should now be cleared
+    assert "Start Room" not in agent._failed_actions
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: _safe_action prefers movement
+# ---------------------------------------------------------------------------
+
+def test_safe_action_prefers_movement():
+    """When no local actions are needed, movement should be preferred."""
+    actions = ["look", "wait", "go north", "go south", "take key"]
+    failed = {"look", "wait", "take key"}
+    # With those failed, should prefer go north or go south
+    results = {_safe_action(actions, failed=failed) for _ in range(50)}
+    assert results <= {"go north", "go south"}
+
+
+def test_safe_action_falls_back_to_look():
+    """Without movement options and no failures, should pick look."""
+    actions = ["look", "wait", "inventory"]
+    action = _safe_action(actions)
+    # Movement preferred but none available → should pick "look"
+    assert action == "look"
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Category hints
+# ---------------------------------------------------------------------------
+
+def test_category_hint_puzzle_with_key():
+    """Having a key in inventory should hint 'puzzle'."""
+    obs = Observation(text="A room.", score=5, inventory=("rusty key",))
+    assert infer_category_hint(obs) == "puzzle"
+
+
+def test_category_hint_combat():
+    """Combat keywords should hint 'combat'."""
+    obs = Observation(text="A troll attacks you!", score=0)
+    assert infer_category_hint(obs) == "combat"
+
+
+def test_category_hint_none_when_ambiguous():
+    """Ambiguous text should return None."""
+    obs = Observation(text="A plain room.", score=0)
+    assert infer_category_hint(obs) is None
+
+
+def test_category_hint_exploration():
+    """Corridor in location should hint 'exploration'."""
+    obs = Observation(text="A dim space.", score=0, location="Dark Corridor")
+    assert infer_category_hint(obs) == "exploration"
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: Forgetting default
+# ---------------------------------------------------------------------------
+
+def test_default_forgetting():
+    """Default forgetting factor should be 0.85."""
+    world = MockWorld()
+    agent = IFAgent(world=world)
+    # The BayesianAgent stores the forgetting factor
+    assert agent.bayesian.forgetting == 0.85

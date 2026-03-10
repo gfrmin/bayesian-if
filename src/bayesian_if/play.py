@@ -18,6 +18,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--model", type=str, default="llama3.1", help="Ollama model name")
     parser.add_argument("--no-llm", action="store_true", help="Disable LLM advisor tool")
     parser.add_argument("--max-steps", type=int, default=100, help="Max game steps")
+    parser.add_argument("--forgetting", type=float, default=0.85, help="Forgetting factor (0-1)")
     parser.add_argument("--verbose", action="store_true", help="Print step-by-step trace")
     args = parser.parse_args(argv)
 
@@ -63,7 +64,7 @@ def main(argv: list[str] | None = None) -> None:
         print("Ollama not available — running without LLM advisor")
 
     # Create and run agent
-    agent = IFAgent(world=world, tools=tools, verbose=args.verbose)
+    agent = IFAgent(world=world, tools=tools, forgetting=args.forgetting, verbose=args.verbose)
     result = agent.play_game(max_steps=args.max_steps)
 
     # Summary
