@@ -40,6 +40,7 @@ source = { editable = "." }
 dependencies = [
     { name = "credence-agents" },
     { name = "numpy" },
+    { name = "textworld" },
 ]
 
 [package.optional-dependencies]
@@ -85,6 +86,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "ruff", marker = "extra == 'dev'" },
+    { name = "textworld", specifier = ">=1.7.0" },
     { name = "textworld", marker = "extra == 'textworld'", specifier = ">=1.5" },
 ]
 provides-extras = ["jericho", "textworld", "ollama", "dev", "all"]

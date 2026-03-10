@@ -25,23 +25,25 @@ class TextWorldWorld:
             lost=True,
         )
         self.env = textworld.start(game_file, request_infos)
-        self._last_infos: dict = {}
+        self._last_state = None
         self._game_file = game_file
 
     def reset(self) -> Observation:
-        obs, infos = self.env.reset()
-        self._last_infos = infos
-        return self._make_observation(obs, infos)
+        state = self.env.reset()
+        self._last_state = state
+        return self._make_observation(state)
 
     def step(self, action: str) -> tuple[Observation, float, bool]:
-        obs, score, done, infos = self.env.step(action)
-        prev_score = self._last_infos.get("score", 0)
+        state, score, done = self.env.step(action)
+        prev_score = self._last_state.score if self._last_state else 0
         reward = float(score - prev_score)
-        self._last_infos = infos
-        return self._make_observation(obs, infos), reward, done
+        self._last_state = state
+        return self._make_observation(state), reward, done
 
     def valid_actions(self) -> list[str]:
-        return list(self._last_infos.get("admissible_commands", []))
+        if self._last_state is None:
+            return []
+        return list(self._last_state.get("admissible_commands", []))
 
     def save(self) -> StateSnapshot:
         return self.env.copy()
@@ -49,12 +51,22 @@ class TextWorldWorld:
     def restore(self, snapshot: StateSnapshot) -> None:
         self.env = snapshot
 
-    def _make_observation(self, text: str, infos: dict) -> Observation:
-        location = infos.get("location", None)
-        inv_text = infos.get("inventory", "")
+    def _make_observation(self, state) -> Observation:
+        text = state.feedback
+        description = state.get("description", "")
+        location = self._parse_location(description)
+        inv_text = state.get("inventory", "")
         inventory = self._parse_inventory(inv_text) if inv_text else ()
-        score = infos.get("score", 0)
+        score = state.score
         return Observation(text=text, score=score, location=location, inventory=inventory)
+
+    @staticmethod
+    def _parse_location(description: str) -> str | None:
+        """Extract location name from TextWorld description header like '-= Attic =-'."""
+        import re
+
+        match = re.match(r"\s*-=\s*(.+?)\s*=-", description)
+        return match.group(1) if match else None
 
     @staticmethod
     def _parse_inventory(inv_text: str) -> tuple[str, ...]:

@@ -13,6 +13,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Bayesian IF agent")
     parser.add_argument("--game", type=str, help="Path to a Z-machine ROM (.z5/.z8)")
     parser.add_argument("--textworld", action="store_true", help="Use TextWorld")
+    parser.add_argument("--tw-game", type=str, help="Path to a pre-generated TextWorld game file")
     parser.add_argument("--tw-difficulty", type=int, default=3, help="TextWorld difficulty")
     parser.add_argument("--model", type=str, default="llama3.2", help="Ollama model name")
     parser.add_argument("--no-llm", action="store_true", help="Disable LLM advisor tool")
@@ -27,8 +28,28 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Loaded Jericho game: {args.game}")
     elif args.textworld:
         from bayesian_if.textworld_world import TextWorldWorld
-        world = TextWorldWorld(f"tw-difficulty-{args.tw_difficulty}")
-        print(f"Loaded TextWorld (difficulty {args.tw_difficulty})")
+        if args.tw_game:
+            game_file = args.tw_game
+        else:
+            import tempfile
+            import subprocess
+            tmpdir = tempfile.mkdtemp(prefix="tw_")
+            game_file = f"{tmpdir}/tw_game.z8"
+            difficulty = args.tw_difficulty
+            subprocess.run(
+                [
+                    "tw-make", "custom",
+                    "--world-size", str(difficulty),
+                    "--nb-objects", str(difficulty + 2),
+                    "--quest-length", str(difficulty),
+                    "--seed", "42",
+                    "--output", game_file,
+                ],
+                check=True,
+            )
+            print(f"Generated TextWorld game: {game_file}")
+        world = TextWorldWorld(game_file)
+        print(f"Loaded TextWorld game: {game_file}")
     else:
         parser.error("Specify --game <rom_path> or --textworld")
         return
@@ -51,7 +72,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Final score: {result.final_score}")
 
     if result.reliability_table is not None and args.verbose:
-        print(f"\nLearned reliability table:")
+        print("\nLearned reliability table:")
         from bayesian_if.categories import CATEGORIES
         for t_idx, tool in enumerate(tools):
             reliabilities = []

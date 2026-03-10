@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import os
+
+_DEFAULT_BASE_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+
 
 def ollama_generate(
     prompt: str,
     model: str = "llama3.2",
     temperature: float = 0.3,
-    base_url: str = "http://localhost:11434",
+    base_url: str = _DEFAULT_BASE_URL,
 ) -> str:
     """Send a generate request to Ollama and return the response text."""
     try:
@@ -24,7 +28,7 @@ def ollama_generate(
     return resp.json()["response"].strip()
 
 
-def ollama_available(base_url: str = "http://localhost:11434") -> bool:
+def ollama_available(base_url: str = _DEFAULT_BASE_URL) -> bool:
     """Check whether Ollama is reachable."""
     try:
         import httpx

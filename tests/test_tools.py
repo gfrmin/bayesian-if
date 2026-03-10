@@ -2,7 +2,7 @@
 
 from bayesian_if.tools import (
     ExamineTool,
-    IFTool,
+
     InventoryTool,
     LLMAdvisorTool,
     LookTool,
@@ -46,7 +46,6 @@ def test_look_tool_returns_valid_index():
 def test_look_tool_does_not_consume_turn():
     world = MockWorld()
     world.reset()
-    snapshot_before = world.save()
     obs = Observation(text="A room.", score=0, location="Start Room")
     actions = world.valid_actions()
 
@@ -85,7 +84,6 @@ def test_inventory_tool_does_not_consume_turn():
     world.reset()
     obs = Observation(text="A room.", score=0)
     actions = world.valid_actions()
-    snapshot = world.save()
 
     InventoryTool().query(world, obs, actions)
 

@@ -95,7 +95,7 @@ def test_play_step_with_no_valid_actions():
     # Just test that IFAgent handles empty lists
     agent = IFAgent(world=world)
     # Create a patched world that returns no actions
-    original_va = world.valid_actions
+
 
     def empty_actions() -> list[str]:
         return []

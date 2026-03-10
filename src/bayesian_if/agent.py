@@ -129,10 +129,11 @@ class IFAgent:
 
         for step_num in range(1, max_steps + 1):
             action, record = self.play_step(obs)
+            prev_obs = obs
             obs, reward, done = self.world.step(action)
 
             # Attribute reward for reliability learning
-            was_correct = attribute_reward(reward)
+            was_correct = attribute_reward(reward, prev_obs, obs)
             self.bayesian.on_question_end(was_correct)
 
             record.step = step_num

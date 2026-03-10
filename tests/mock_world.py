@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 
-from bayesian_if.world import Observation, World
+from bayesian_if.world import Observation
 
 
 @dataclass
