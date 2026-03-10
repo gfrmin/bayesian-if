@@ -90,6 +90,14 @@ def test_score_actions_no_match():
     assert _score_actions(actions, None, ["zzz"]) is None
 
 
+def test_score_actions_tied_scores_not_always_first():
+    """When scores are tied, random tie-breaking should not always pick index 0."""
+    actions = ["go north", "go south", "go east", "go west"]
+    results = {_score_actions(actions, "go", []) for _ in range(100)}
+    # All four actions have score 3.0 (verb match only); should see variety
+    assert len(results) > 1, f"Tie-breaking always returned the same index: {results}"
+
+
 def test_score_actions_verb_only():
     actions = ["take key", "examine key"]
     # When verb matches but no noun info, prefer verb match
@@ -339,3 +347,31 @@ def test_llm_prompt_includes_history():
     assert "go south" in prompts[0]
     assert "garden" in prompts[0]
     assert "take lamp" in prompts[0]
+
+
+# ---------------------------------------------------------------------------
+# Ollama URL normalization
+# ---------------------------------------------------------------------------
+
+def test_ollama_normalize_bare_ip():
+    from bayesian_if.ollama import _normalize_base_url
+
+    assert _normalize_base_url("100.114.52.102") == "http://100.114.52.102:11434"
+
+
+def test_ollama_normalize_ip_with_port():
+    from bayesian_if.ollama import _normalize_base_url
+
+    assert _normalize_base_url("192.168.1.1:8080") == "http://192.168.1.1:8080"
+
+
+def test_ollama_normalize_full_url():
+    from bayesian_if.ollama import _normalize_base_url
+
+    assert _normalize_base_url("http://localhost:11434") == "http://localhost:11434"
+
+
+def test_ollama_normalize_trailing_slash():
+    from bayesian_if.ollama import _normalize_base_url
+
+    assert _normalize_base_url("http://localhost:11434/") == "http://localhost:11434"

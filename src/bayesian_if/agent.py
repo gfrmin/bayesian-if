@@ -174,8 +174,10 @@ class IFAgent:
 
 def _safe_action(valid_actions: list[str]) -> str:
     """Pick a safe fallback action when the agent abstains."""
-    safe_verbs = ("look", "wait", "inventory", "examine")
-    for action in valid_actions:
-        if any(action.lower().startswith(v) for v in safe_verbs):
-            return action
-    return valid_actions[0]
+    import random
+
+    for verb in ("look", "inventory", "wait"):
+        for action in valid_actions:
+            if action.lower().startswith(verb):
+                return action
+    return random.choice(valid_actions)

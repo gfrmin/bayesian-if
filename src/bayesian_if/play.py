@@ -15,7 +15,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--textworld", action="store_true", help="Use TextWorld")
     parser.add_argument("--tw-game", type=str, help="Path to a pre-generated TextWorld game file")
     parser.add_argument("--tw-difficulty", type=int, default=3, help="TextWorld difficulty")
-    parser.add_argument("--model", type=str, default="llama3.2", help="Ollama model name")
+    parser.add_argument("--model", type=str, default="llama3.1", help="Ollama model name")
     parser.add_argument("--no-llm", action="store_true", help="Disable LLM advisor tool")
     parser.add_argument("--max-steps", type=int, default=100, help="Max game steps")
     parser.add_argument("--verbose", action="store_true", help="Print step-by-step trace")

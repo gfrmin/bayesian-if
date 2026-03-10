@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 from abc import ABC, abstractmethod
 from typing import Callable
@@ -79,9 +80,8 @@ def _score_actions(
     - Object match: +1.0 per noun, using word-boundary matching (\\bkey\\b not substring)
     - Returns argmax index if any action scores > 0, else None.
     """
-    best_idx: int | None = None
-    best_score = 0.0
-    for i, action in enumerate(valid_actions):
+    scores: list[float] = []
+    for action in valid_actions:
         a_verb, a_objects = _parse_action(action)
         score = 0.0
         if verb and a_verb == verb:
@@ -90,10 +90,12 @@ def _score_actions(
         for noun in nouns:
             if re.search(r"\b" + re.escape(noun) + r"\b", obj_text, re.I):
                 score += 1.0
-        if score > best_score:
-            best_score = score
-            best_idx = i
-    return best_idx
+        scores.append(score)
+    best_score = max(scores) if scores else 0.0
+    if best_score <= 0.0:
+        return None
+    tied = [i for i, s in enumerate(scores) if s == best_score]
+    return random.choice(tied)
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +271,7 @@ class LLMAdvisorTool(IFTool):
     def __init__(
         self,
         generate_fn: Callable[[str], str] | None = None,
-        model: str = "llama3.2",
+        model: str = "llama3.1",
     ) -> None:
         if generate_fn is not None:
             self._generate = generate_fn
