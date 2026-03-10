@@ -1,0 +1,67 @@
+"""CLI entry point: play an IF game with the Bayesian agent."""
+
+from __future__ import annotations
+
+import argparse
+
+from bayesian_if.agent import IFAgent
+from bayesian_if.ollama import ollama_available
+from bayesian_if.tools import DEFAULT_TOOLS, LLMAdvisorTool
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Bayesian IF agent")
+    parser.add_argument("--game", type=str, help="Path to a Z-machine ROM (.z5/.z8)")
+    parser.add_argument("--textworld", action="store_true", help="Use TextWorld")
+    parser.add_argument("--tw-difficulty", type=int, default=3, help="TextWorld difficulty")
+    parser.add_argument("--model", type=str, default="llama3.2", help="Ollama model name")
+    parser.add_argument("--no-llm", action="store_true", help="Disable LLM advisor tool")
+    parser.add_argument("--max-steps", type=int, default=100, help="Max game steps")
+    parser.add_argument("--verbose", action="store_true", help="Print step-by-step trace")
+    args = parser.parse_args(argv)
+
+    # Create world
+    if args.game:
+        from bayesian_if.jericho_world import JerichoWorld
+        world = JerichoWorld(args.game)
+        print(f"Loaded Jericho game: {args.game}")
+    elif args.textworld:
+        from bayesian_if.textworld_world import TextWorldWorld
+        world = TextWorldWorld(f"tw-difficulty-{args.tw_difficulty}")
+        print(f"Loaded TextWorld (difficulty {args.tw_difficulty})")
+    else:
+        parser.error("Specify --game <rom_path> or --textworld")
+        return
+
+    # Set up tools
+    tools = list(DEFAULT_TOOLS)
+    if not args.no_llm and ollama_available():
+        tools.append(LLMAdvisorTool(model=args.model))
+        print(f"LLM advisor enabled (model: {args.model})")
+    elif not args.no_llm:
+        print("Ollama not available — running without LLM advisor")
+
+    # Create and run agent
+    agent = IFAgent(world=world, tools=tools, verbose=args.verbose)
+    result = agent.play_game(max_steps=args.max_steps)
+
+    # Summary
+    print(f"\n{'='*60}")
+    print(f"Game finished after {result.steps_taken} steps")
+    print(f"Final score: {result.final_score}")
+
+    if result.reliability_table is not None and args.verbose:
+        print(f"\nLearned reliability table:")
+        from bayesian_if.categories import CATEGORIES
+        for t_idx, tool in enumerate(tools):
+            reliabilities = []
+            for c_idx, cat in enumerate(CATEGORIES):
+                alpha = result.reliability_table[t_idx, c_idx, 0]
+                beta = result.reliability_table[t_idx, c_idx, 1]
+                r = alpha / (alpha + beta)
+                reliabilities.append(f"{cat}={r:.2f}")
+            print(f"  {tool.name}: {', '.join(reliabilities)}")
+
+
+if __name__ == "__main__":
+    main()
