@@ -26,6 +26,7 @@ all = [
 
 [project.scripts]
 bayesian-if = "bayesian_if.play:main"
+bayesian-if-bench = "bayesian_if.benchmark_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/gfrmin/bayesian-if"

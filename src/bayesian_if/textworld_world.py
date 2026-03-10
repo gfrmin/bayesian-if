@@ -18,11 +18,15 @@ class TextWorldWorld:
         request_infos = textworld.EnvInfos(
             admissible_commands=True,
             score=True,
+            max_score=True,
             inventory=True,
             description=True,
             location=True,
+            objective=True,
             won=True,
             lost=True,
+            policy_commands=True,
+            intermediate_reward=True,
         )
         self.env = textworld.start(game_file, request_infos)
         self._last_state = None
@@ -51,6 +55,30 @@ class TextWorldWorld:
     def restore(self, snapshot: StateSnapshot) -> None:
         self.env = snapshot
 
+    @property
+    def max_score(self) -> int:
+        if self._last_state is None:
+            return 0
+        return self._last_state.get("max_score", 0) or 0
+
+    @property
+    def policy_commands(self) -> list[str]:
+        if self._last_state is None:
+            return []
+        return list(self._last_state.get("policy_commands", []) or [])
+
+    @property
+    def game_won(self) -> bool:
+        if self._last_state is None:
+            return False
+        return bool(self._last_state.get("won", False))
+
+    @property
+    def objective(self) -> str | None:
+        if self._last_state is None:
+            return None
+        return self._last_state.get("objective", None) or None
+
     def _make_observation(self, state) -> Observation:
         text = state.feedback
         description = state.get("description", "")
@@ -58,7 +86,11 @@ class TextWorldWorld:
         inv_text = state.get("inventory", "")
         inventory = self._parse_inventory(inv_text) if inv_text else ()
         score = state.score
-        return Observation(text=text, score=score, location=location, inventory=inventory)
+        objective = state.get("objective", None) or None
+        return Observation(
+            text=text, score=score, location=location, inventory=inventory,
+            objective=objective,
+        )
 
     @staticmethod
     def _parse_location(description: str) -> str | None:

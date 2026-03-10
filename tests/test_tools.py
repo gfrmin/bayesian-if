@@ -2,16 +2,21 @@
 
 from bayesian_if.tools import (
     ExamineTool,
-
     InventoryTool,
     LLMAdvisorTool,
     LookTool,
     _best_action_matching,
     _extract_keywords,
+    _parse_action,
+    _score_actions,
 )
 from bayesian_if.world import Observation
 from tests.mock_world import MockWorld
 
+
+# ---------------------------------------------------------------------------
+# Legacy helpers (backward compat)
+# ---------------------------------------------------------------------------
 
 def test_extract_keywords():
     text = "A rusty key sits on the old wooden table."
@@ -30,6 +35,77 @@ def test_best_action_matching():
     assert _best_action_matching(actions, ["north", "door"]) == 0
     assert _best_action_matching(actions, ["zzz"]) is None
 
+
+# ---------------------------------------------------------------------------
+# Phase 3: _parse_action + _score_actions
+# ---------------------------------------------------------------------------
+
+def test_parse_action_known_verb():
+    verb, objects = _parse_action("take key")
+    assert verb == "take"
+    assert objects == ["key"]
+
+
+def test_parse_action_multi_word_object():
+    verb, objects = _parse_action("open rusty chest")
+    assert verb == "open"
+    assert objects == ["rusty", "chest"]
+
+
+def test_parse_action_go_direction():
+    verb, objects = _parse_action("go north")
+    assert verb == "go"
+    assert objects == ["north"]
+
+
+def test_parse_action_unknown_verb():
+    verb, objects = _parse_action("frobnicate widget")
+    assert verb is None
+    assert objects == ["frobnicate", "widget"]
+
+
+def test_parse_action_empty():
+    verb, objects = _parse_action("")
+    assert verb is None
+    assert objects == []
+
+
+def test_score_actions_verb_plus_noun():
+    actions = ["go north", "take key", "examine key"]
+    assert _score_actions(actions, "take", ["key"]) == 1
+
+
+def test_score_actions_word_boundary():
+    actions = ["take monkey", "take key"]
+    assert _score_actions(actions, None, ["key"]) == 1
+
+
+def test_score_actions_verb_plus_direction():
+    actions = ["go north", "go south"]
+    assert _score_actions(actions, "go", ["north"]) == 0
+
+
+def test_score_actions_no_match():
+    actions = ["go north", "look"]
+    assert _score_actions(actions, None, ["zzz"]) is None
+
+
+def test_score_actions_verb_only():
+    actions = ["take key", "examine key"]
+    # When verb matches but no noun info, prefer verb match
+    assert _score_actions(actions, "take", []) == 0
+
+
+def test_score_actions_monkey_vs_key():
+    """'key' should NOT match 'monkey' with word-boundary matching."""
+    actions = ["take monkey", "take key", "go north"]
+    result = _score_actions(actions, None, ["key"])
+    assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# Tool integration tests
+# ---------------------------------------------------------------------------
 
 def test_look_tool_returns_valid_index():
     world = MockWorld()
@@ -135,3 +211,131 @@ def test_tool_config_conversion():
     assert config.cost == 0.0
     assert len(config.coverage_by_category) == 5
     assert all(0.0 <= c <= 1.0 for c in config.coverage_by_category)
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: Structured observation in tools
+# ---------------------------------------------------------------------------
+
+def test_inventory_tool_uses_structured_inventory():
+    """InventoryTool should use observation.inventory directly to match actions."""
+    world = MockWorld()
+    world.reset()
+    world.step("take key")
+
+    obs = Observation(
+        text="Hallway.", score=5, location="Start Room", inventory=("key",)
+    )
+    # Valid actions include "go north" — "key" should NOT match "go north"
+    # but if there were an action like "unlock door with key", it would match
+    actions = ["go north", "go south", "open chest"]
+    tool = InventoryTool()
+    result = tool.query(world, obs, actions)
+    # "key" doesn't word-boundary match any of these action objects, so None
+    assert result is None
+
+
+def test_inventory_tool_matches_action_with_item():
+    """InventoryTool matches inventory items to actions using word boundaries."""
+    world = MockWorld()
+    world.reset()
+    world.step("take key")
+
+    obs = Observation(
+        text="Room.", score=5, location="Treasure Room", inventory=("key",)
+    )
+    actions = ["go south", "unlock chest with key", "look"]
+    tool = InventoryTool()
+    result = tool.query(world, obs, actions)
+    assert result == 1  # "key" matches "unlock chest with key"
+
+
+def test_inventory_tool_falls_back_to_save_restore():
+    """InventoryTool falls back to save/restore when inventory is empty."""
+    world = MockWorld()
+    world.reset()
+
+    obs = Observation(text="A room.", score=0, location="Start Room", inventory=())
+    actions = world.valid_actions()
+
+    tool = InventoryTool()
+    # Should not crash — falls back to save/restore "inventory" command
+    result = tool.query(world, obs, actions)
+    assert result is None or (0 <= result < len(actions))
+
+
+def test_examine_tool_considers_inventory_items():
+    """ExamineTool._pick_target should consider inventory items."""
+    obs = Observation(
+        text="A bare room.", score=5, location="Room", inventory=("golden key",)
+    )
+    # No examinable verbs in actions
+    actions = ["go north", "go south", "wait"]
+    target = ExamineTool._pick_target(obs, actions)
+    assert target == "golden key"
+
+
+def test_look_tool_incorporates_location():
+    """LookTool should incorporate location into keyword scoring."""
+    world = MockWorld()
+    world.reset()
+    # The mock world's Start Room description mentions "north"
+    obs = Observation(text="A room.", score=0, location="Start Room")
+    actions = world.valid_actions()
+
+    tool = LookTool()
+    result = tool.query(world, obs, actions)
+    # Should return a valid index (location is used as additional keyword)
+    assert result is None or (0 <= result < len(actions))
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: LLM prompt context
+# ---------------------------------------------------------------------------
+
+def test_llm_prompt_includes_location():
+    """LLM prompt should include location when available."""
+    prompts: list[str] = []
+
+    def capture_prompt(prompt: str) -> str:
+        prompts.append(prompt)
+        return "0"
+
+    world = MockWorld()
+    world.reset()
+    obs = Observation(
+        text="A dark room.", score=0, location="Kitchen",
+        inventory=("lamp",), objective="Find the treasure.",
+    )
+    actions = ["go north", "take key"]
+
+    tool = LLMAdvisorTool(generate_fn=capture_prompt)
+    tool.query(world, obs, actions)
+
+    assert len(prompts) == 1
+    assert "Kitchen" in prompts[0]
+    assert "lamp" in prompts[0]
+    assert "Find the treasure" in prompts[0]
+
+
+def test_llm_prompt_includes_history():
+    """LLM prompt should include recent history when provided."""
+    prompts: list[str] = []
+
+    def capture_prompt(prompt: str) -> str:
+        prompts.append(prompt)
+        return "0"
+
+    world = MockWorld()
+    world.reset()
+    obs = Observation(text="A room.", score=0)
+    actions = ["go north", "look"]
+    history = [("go south", "You arrive at a garden."), ("take lamp", "Taken.")]
+
+    tool = LLMAdvisorTool(generate_fn=capture_prompt)
+    tool.query(world, obs, actions, history=history)
+
+    assert len(prompts) == 1
+    assert "go south" in prompts[0]
+    assert "garden" in prompts[0]
+    assert "take lamp" in prompts[0]

@@ -14,6 +14,7 @@ class Observation:
     score: int
     location: str | None = None
     inventory: tuple[str, ...] = ()
+    objective: str | None = None
 
 
 # Opaque snapshot — each World implementation defines its own internal format.

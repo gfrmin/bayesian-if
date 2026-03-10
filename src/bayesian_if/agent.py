@@ -67,6 +67,7 @@ class IFAgent:
         self.categories = categories
         self.scoring = scoring
         self.verbose = verbose
+        self._history: list[tuple[str, str]] = []
 
         if category_infer_fn is None:
             category_infer_fn = make_if_category_infer_fn(categories)
@@ -93,8 +94,12 @@ class IFAgent:
             )
 
         # Build the tool query function that BayesianAgent will call
+        recent_history = self._history[-5:] if self._history else None
+
         def tool_query_fn(tool_idx: int) -> int | None:
-            return self.if_tools[tool_idx].query(self.world, observation, valid_actions)
+            return self.if_tools[tool_idx].query(
+                self.world, observation, valid_actions, history=recent_history
+            )
 
         result = self.bayesian.solve_question(
             question_text=observation.text,
@@ -125,12 +130,16 @@ class IFAgent:
     def play_game(self, max_steps: int = 100) -> GameResult:
         """Play a full game, returning trace and final score."""
         obs = self.world.reset()
+        self._history = []
         steps: list[StepRecord] = []
 
         for step_num in range(1, max_steps + 1):
             action, record = self.play_step(obs)
             prev_obs = obs
             obs, reward, done = self.world.step(action)
+
+            # Track history for LLM context
+            self._history.append((action, obs.text[:100]))
 
             # Attribute reward for reliability learning
             was_correct = attribute_reward(reward, prev_obs, obs)
