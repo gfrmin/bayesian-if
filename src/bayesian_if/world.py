@@ -15,6 +15,7 @@ class Observation:
     location: str | None = None
     inventory: tuple[str, ...] = ()
     objective: str | None = None
+    intermediate_reward: float = 0.0
 
 
 # Opaque snapshot — each World implementation defines its own internal format.

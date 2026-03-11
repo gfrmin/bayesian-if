@@ -5,8 +5,10 @@ from bayesian_if.tools import (
     InventoryTool,
     LLMAdvisorTool,
     LookTool,
+    SimulationTool,
     _best_action_matching,
     _extract_keywords,
+    _extract_verb,
     _parse_action,
     _score_actions,
 )
@@ -273,14 +275,14 @@ def test_inventory_tool_falls_back_to_save_restore():
 
 
 def test_examine_tool_considers_inventory_items():
-    """ExamineTool._pick_target should consider inventory items."""
+    """ExamineTool._pick_targets should consider inventory items."""
     obs = Observation(
         text="A bare room.", score=5, location="Room", inventory=("golden key",)
     )
     # No examinable verbs in actions
     actions = ["go north", "go south", "wait"]
-    target = ExamineTool._pick_target(obs, actions)
-    assert target == "golden key"
+    targets = ExamineTool._pick_targets(obs, actions)
+    assert "golden key" in targets
 
 
 def test_look_tool_incorporates_location():
@@ -387,8 +389,8 @@ def test_examine_tool_avoids_recently_examined():
     actions = ["examine insect", "examine key", "go north"]
     history = [("examine insect", "It's a bug.")]
 
-    target = ExamineTool._pick_target(obs, actions, history=history)
-    assert target == "key"  # "insect" was already examined
+    targets = ExamineTool._pick_targets(obs, actions, history=history)
+    assert targets[0] == "key"  # "insect" was already examined
 
 
 def test_examine_tool_fallback_when_all_examined():
@@ -397,9 +399,9 @@ def test_examine_tool_fallback_when_all_examined():
     actions = ["examine insect", "examine key", "go north"]
     history = [("examine insect", "It's a bug."), ("examine key", "A rusty key.")]
 
-    target = ExamineTool._pick_target(obs, actions, history=history)
+    targets = ExamineTool._pick_targets(obs, actions, history=history)
     # All examined → falls back to full candidates list
-    assert target in ("insect", "key")
+    assert targets[0] in ("insect", "key")
 
 
 # ---------------------------------------------------------------------------
@@ -427,3 +429,103 @@ def test_llm_prompt_includes_failed_actions():
     assert "examine insect" in prompts[0]
     assert "take insect" in prompts[0]
     assert "Avoid repeating" in prompts[0]
+
+
+# ---------------------------------------------------------------------------
+# SimulationTool
+# ---------------------------------------------------------------------------
+
+def test_simulation_tool_finds_reward():
+    """SimulationTool should find the action with positive reward."""
+    world = MockWorld()
+    world.reset()
+    obs = Observation(text="A room.", score=0, location="Start Room")
+    actions = world.valid_actions()
+
+    tool = SimulationTool()
+    result = tool.query(world, obs, actions)
+    # "take key" gives +5 reward
+    assert result is not None
+    assert actions[result] == "take key"
+
+
+def test_simulation_tool_no_reward():
+    """SimulationTool returns None when no action gives positive reward."""
+    world = MockWorld()
+    world.reset()
+    # Move to hallway where no action gives immediate reward
+    world.step("take key")
+    world.step("go north")
+    obs = Observation(text="A hallway.", score=6, location="Hallway")
+    actions = ["go south", "go north"]
+
+    tool = SimulationTool()
+    result = tool.query(world, obs, actions)
+    # "go north" gives +1 for first visit to treasure room
+    assert result is not None
+    assert actions[result] == "go north"
+
+
+def test_simulation_tool_does_not_consume_turn():
+    """SimulationTool should not alter world state."""
+    world = MockWorld()
+    world.reset()
+    obs = Observation(text="A room.", score=0, location="Start Room")
+    actions = world.valid_actions()
+
+    tool = SimulationTool()
+    tool.query(world, obs, actions)
+
+    # World should still be in initial state
+    assert world.valid_actions() == actions
+
+
+def test_simulation_tool_coverage():
+    """SimulationTool should have high puzzle coverage, low exploration."""
+    tool = SimulationTool()
+    config = tool.to_tool_config(("exploration", "puzzle", "inventory"))
+    assert config.coverage_by_category[1] > config.coverage_by_category[0]  # puzzle > exploration
+
+
+# ---------------------------------------------------------------------------
+# Objective-aware scoring
+# ---------------------------------------------------------------------------
+
+def test_score_actions_with_objective_nouns():
+    """Objective nouns should boost matching actions."""
+    actions = ["take key", "go north", "examine table"]
+    # Without objective
+    idx1 = _score_actions(actions, verb=None, nouns=["table"])
+    assert idx1 is not None
+    assert actions[idx1] == "examine table"
+
+    # With objective mentioning "key"
+    idx2 = _score_actions(actions, verb=None, nouns=["table"], objective_nouns=["key"])
+    assert idx2 is not None
+    assert actions[idx2] == "take key"  # key gets +2 objective + 0 noun vs table's +1 noun
+
+
+# ---------------------------------------------------------------------------
+# Verb extraction
+# ---------------------------------------------------------------------------
+
+def test_extract_verb_from_text():
+    """_extract_verb should find the first IF verb in text."""
+    assert _extract_verb("You should take the key from the table.") == "take"
+    assert _extract_verb("The door is locked.") is None
+    assert _extract_verb("Look around the room carefully.") == "look"
+
+
+# ---------------------------------------------------------------------------
+# Multi-examine
+# ---------------------------------------------------------------------------
+
+def test_examine_tool_multi_targets():
+    """ExamineTool._pick_targets should return multiple targets."""
+    obs = Observation(text="A room.", score=0, location="Room")
+    actions = ["examine key", "examine chest", "examine table", "go north"]
+    targets = ExamineTool._pick_targets(obs, actions, max_targets=3)
+    assert len(targets) == 3
+    assert "key" in targets
+    assert "chest" in targets
+    assert "table" in targets

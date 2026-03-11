@@ -73,11 +73,15 @@ def _parse_action(action: str) -> tuple[str | None, list[str]]:
 
 
 def _score_actions(
-    valid_actions: list[str], verb: str | None, nouns: list[str]
+    valid_actions: list[str],
+    verb: str | None,
+    nouns: list[str],
+    objective_nouns: list[str] | None = None,
 ) -> int | None:
     """Score each valid action against a recommended verb + nouns.
 
     - Verb match: +3.0 (high weight — "take key" beats "examine key" when tool said "take")
+    - Objective noun match: +2.0 per noun (between verb and regular noun priority)
     - Object match: +1.0 per noun, using word-boundary matching (\\bkey\\b not substring)
     - Returns argmax index if any action scores > 0, else None.
     """
@@ -88,6 +92,10 @@ def _score_actions(
         if verb and a_verb == verb:
             score += 3.0
         obj_text = " ".join(a_objects)
+        if objective_nouns:
+            for noun in objective_nouns:
+                if re.search(r"\b" + re.escape(noun) + r"\b", obj_text, re.I):
+                    score += 2.0
         for noun in nouns:
             if re.search(r"\b" + re.escape(noun) + r"\b", obj_text, re.I):
                 score += 1.0
@@ -128,6 +136,15 @@ def _extract_keywords(text: str) -> list[str]:
     return [w for w in words if w not in stop and len(w) > 2]
 
 
+def _extract_verb(text: str) -> str | None:
+    """Extract the first IF verb from descriptive text."""
+    words = re.findall(r"[a-zA-Z]+", text.lower())
+    for word in words:
+        if word in IF_VERBS:
+            return word
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Tool implementations
 # ---------------------------------------------------------------------------
@@ -151,10 +168,14 @@ class LookTool(IFTool):
         try:
             obs, _, _ = world.step("look")
             keywords = _extract_keywords(obs.text)
-            # Phase 1: incorporate location for directional disambiguation
+            # Incorporate location for directional disambiguation
             if observation.location:
                 keywords.append(observation.location.lower())
-            return _score_actions(valid_actions, verb=None, nouns=keywords)
+            # Extract verbs from look text for better action matching
+            verb = _extract_verb(obs.text)
+            obj_nouns = _extract_keywords(observation.objective) if observation.objective else None
+            return _score_actions(valid_actions, verb=verb, nouns=keywords,
+                                  objective_nouns=obj_nouns)
         finally:
             world.restore(snapshot)
 
@@ -185,29 +206,34 @@ class ExamineTool(IFTool):
         history: list[tuple[str, str]] | None = None,
         failed_actions: set[str] | None = None,
     ) -> int | None:
-        # Find an object to examine from valid actions or observation text
-        target = self._pick_target(observation, valid_actions, history=history)
-        if target is None:
+        targets = self._pick_targets(observation, valid_actions, history=history, max_targets=3)
+        if not targets:
             return None
 
-        snapshot = world.save()
-        try:
-            obs, _, _ = world.step(f"examine {target}")
-            keywords = _extract_keywords(obs.text)
-            keywords.append(target)
-            return _score_actions(valid_actions, verb=None, nouns=keywords)
-        finally:
-            world.restore(snapshot)
+        obj_nouns = _extract_keywords(observation.objective) if observation.objective else None
+        all_keywords: list[str] = []
+
+        for target in targets:
+            snapshot = world.save()
+            try:
+                obs, _, _ = world.step(f"examine {target}")
+                all_keywords.extend(_extract_keywords(obs.text))
+                all_keywords.append(target)
+            finally:
+                world.restore(snapshot)
+
+        return _score_actions(valid_actions, verb=None, nouns=all_keywords,
+                              objective_nouns=obj_nouns)
 
     @staticmethod
-    def _pick_target(
+    def _pick_targets(
         observation: Observation,
         valid_actions: list[str],
         *,
         history: list[tuple[str, str]] | None = None,
-    ) -> str | None:
-        """Pick an object to examine — prefer novel items mentioned in actions."""
-        # Collect ALL candidate targets from valid actions
+        max_targets: int = 3,
+    ) -> list[str]:
+        """Pick up to max_targets objects to examine — prefer novel items."""
         candidates: list[str] = []
         for action in valid_actions:
             match = re.match(
@@ -224,14 +250,14 @@ class ExamineTool(IFTool):
                 candidates = novel
 
         if candidates:
-            return candidates[0]
+            return candidates[:max_targets]
 
         # Consider inventory items as examination targets
         if observation.inventory:
-            return observation.inventory[0]
+            return list(observation.inventory[:max_targets])
         # Fallback: look for nouns in observation text
         nouns = re.findall(r"\b([A-Z][a-z]+)\b", observation.text)
-        return nouns[0].lower() if nouns else None
+        return [n.lower() for n in nouns[:max_targets]] if nouns else []
 
     def _coverage(self, categories: tuple[str, ...]) -> np.ndarray:
         coverage = {
@@ -259,16 +285,19 @@ class InventoryTool(IFTool):
         history: list[tuple[str, str]] | None = None,
         failed_actions: set[str] | None = None,
     ) -> int | None:
-        # Phase 1: use structured inventory when available
+        obj_nouns = _extract_keywords(observation.objective) if observation.objective else None
+        # Use structured inventory when available
         if observation.inventory:
             items = [item.lower() for item in observation.inventory]
-            return _score_actions(valid_actions, verb=None, nouns=items)
+            return _score_actions(valid_actions, verb=None, nouns=items,
+                                  objective_nouns=obj_nouns)
         # Fallback: save/restore bracket
         snapshot = world.save()
         try:
             obs, _, _ = world.step("inventory")
             keywords = _extract_keywords(obs.text)
-            return _score_actions(valid_actions, verb=None, nouns=keywords)
+            return _score_actions(valid_actions, verb=None, nouns=keywords,
+                                  objective_nouns=obj_nouns)
         finally:
             world.restore(snapshot)
 
@@ -360,5 +389,44 @@ class LLMAdvisorTool(IFTool):
         return np.full(len(categories), 0.7)
 
 
-DEFAULT_TOOLS: list[IFTool] = [LookTool(), ExamineTool(), InventoryTool()]
+class SimulationTool(IFTool):
+    """Try each candidate action via save/restore, return the one with highest reward."""
+
+    name = "simulate"
+    cost = 0.0
+
+    def query(
+        self,
+        world: World,
+        observation: Observation,
+        valid_actions: list[str],
+        *,
+        history: list[tuple[str, str]] | None = None,
+        failed_actions: set[str] | None = None,
+    ) -> int | None:
+        best_idx: int | None = None
+        best_reward = 0.0
+        for i, action in enumerate(valid_actions):
+            snapshot = world.save()
+            try:
+                _, reward, _ = world.step(action)
+                if reward > best_reward:
+                    best_reward = reward
+                    best_idx = i
+            finally:
+                world.restore(snapshot)
+        return best_idx
+
+    def _coverage(self, categories: tuple[str, ...]) -> np.ndarray:
+        coverage = {
+            "exploration": 0.3,
+            "puzzle": 0.95,
+            "inventory": 0.8,
+            "dialogue": 0.2,
+            "combat": 0.7,
+        }
+        return np.array([coverage.get(c, 0.5) for c in categories])
+
+
+DEFAULT_TOOLS: list[IFTool] = [LookTool(), ExamineTool(), InventoryTool(), SimulationTool()]
 """Default tools (no LLM). Add LLMAdvisorTool separately when Ollama is available."""

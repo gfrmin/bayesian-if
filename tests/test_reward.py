@@ -38,3 +38,19 @@ def test_zero_reward_different_inventory_is_ambiguous():
 def test_no_observations_backward_compat():
     assert attribute_reward(0.0) is None
     assert attribute_reward(0.0, None, None) is None
+
+
+def test_intermediate_reward_positive_is_correct():
+    """Zero score delta but positive intermediate_reward → True."""
+    prev = Observation(text="A room.", score=0, location="room", inventory=())
+    new = Observation(
+        text="A room.", score=0, location="room", inventory=(),
+        intermediate_reward=1.0,
+    )
+    assert attribute_reward(0.0, prev, new) is True
+
+
+def test_intermediate_reward_zero_unchanged():
+    """Zero intermediate_reward + unchanged state → False (wasted turn)."""
+    obs = Observation(text="A room.", score=0, location="room", inventory=())
+    assert attribute_reward(0.0, obs, obs) is False

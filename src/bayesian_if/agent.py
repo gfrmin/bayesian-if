@@ -31,6 +31,9 @@ class StepRecord:
     confidence: float
     reward: float
     cumulative_score: int
+    tool_recommendations: dict[int, int | None] = field(default_factory=dict)
+    category_hint: str | None = None
+    was_correct: bool | None = None
 
 
 @dataclass
@@ -80,6 +83,7 @@ class IFAgent:
             categories=categories,
             category_infer_fn=category_infer_fn,
             forgetting=forgetting,
+            scoring=self.scoring,
         )
 
     def play_step(self, observation: Observation) -> tuple[str, StepRecord]:
@@ -111,12 +115,15 @@ class IFAgent:
 
         # Build the tool query function that BayesianAgent will call
         recent_history = self._history[-5:] if self._history else None
+        tool_recommendations: dict[int, int | None] = {}
 
         def tool_query_fn(tool_idx: int) -> int | None:
-            return self.if_tools[tool_idx].query(
+            result = self.if_tools[tool_idx].query(
                 self.world, observation, effective,
                 history=recent_history, failed_actions=failed_here,
             )
+            tool_recommendations[tool_idx] = result
+            return result
 
         # Infer category hint from structured state
         category_hint = infer_category_hint(observation)
@@ -143,6 +150,8 @@ class IFAgent:
             confidence=result.confidence,
             reward=0.0,  # filled in after step
             cumulative_score=observation.score,
+            tool_recommendations=tool_recommendations,
+            category_hint=category_hint,
         )
 
         return chosen_action, record
@@ -175,6 +184,7 @@ class IFAgent:
             record.step = step_num
             record.reward = reward
             record.cumulative_score = obs.score
+            record.was_correct = was_correct
             steps.append(record)
 
             if self.verbose:

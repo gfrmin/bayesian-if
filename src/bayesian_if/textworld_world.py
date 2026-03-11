@@ -87,9 +87,10 @@ class TextWorldWorld:
         inventory = self._parse_inventory(inv_text) if inv_text else ()
         score = state.score
         objective = state.get("objective", None) or None
+        intermediate_reward = float(state.get("intermediate_reward", 0) or 0)
         return Observation(
             text=text, score=score, location=location, inventory=inventory,
-            objective=objective,
+            objective=objective, intermediate_reward=intermediate_reward,
         )
 
     @staticmethod
