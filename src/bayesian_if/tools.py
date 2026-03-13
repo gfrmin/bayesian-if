@@ -316,7 +316,7 @@ class LLMAdvisorTool(IFTool):
     """Ask an LLM which action to take."""
 
     name = "llm_advisor"
-    cost = 1.0
+    cost = 0.1
 
     def __init__(
         self,

@@ -23,16 +23,16 @@ def test_zero_reward_same_obs_is_ambiguous():
     assert attribute_reward(0.0, obs, obs) is None
 
 
-def test_zero_reward_different_location_is_ambiguous():
+def test_zero_reward_different_location_is_progress():
     prev = Observation(text="A dark room.", score=0, location="room1", inventory=())
     new = Observation(text="A bright room.", score=0, location="room2", inventory=())
-    assert attribute_reward(0.0, prev, new) is None
+    assert attribute_reward(0.0, prev, new) is True
 
 
-def test_zero_reward_different_inventory_is_ambiguous():
+def test_zero_reward_different_inventory_is_progress():
     prev = Observation(text="A dark room.", score=0, location="room", inventory=())
     new = Observation(text="A dark room.", score=0, location="room", inventory=("key",))
-    assert attribute_reward(0.0, prev, new) is None
+    assert attribute_reward(0.0, prev, new) is True
 
 
 def test_no_observations_backward_compat():
