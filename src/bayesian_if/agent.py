@@ -136,7 +136,12 @@ class IFAgent:
         )
 
         if result.answer is not None and result.answer < len(effective):
-            chosen_action = effective[result.answer]
+            if _is_uniform_posterior(result.confidence, len(effective)):
+                chosen_action = _exploration_tiebreak(
+                    effective, failed_here, self._history,
+                )
+            else:
+                chosen_action = effective[result.answer]
         else:
             # Abstain → take a safe action
             chosen_action = _safe_action(effective, failed=failed_here)
@@ -174,7 +179,7 @@ class IFAgent:
             # Update failed-action memory
             if reward > 0:
                 self._failed_actions.pop(prev_obs.location, None)
-            elif reward <= 0 and obs.score == prev_obs.score:
+            elif reward <= 0 and obs.score == prev_obs.score and obs.intermediate_reward <= 0:
                 self._failed_actions.setdefault(prev_obs.location, set()).add(action)
 
             # Attribute reward for reliability learning
@@ -207,6 +212,45 @@ class IFAgent:
             steps=steps,
             reliability_table=self.bayesian.reliability_table.copy(),
         )
+
+
+def _is_uniform_posterior(confidence: float, n_candidates: int, tol: float = 1e-6) -> bool:
+    """True when the posterior is effectively uniform (no tool moved the needle)."""
+    return abs(confidence - 1.0 / n_candidates) < tol
+
+
+def _exploration_tiebreak(
+    effective: list[str],
+    failed_here: set[str],
+    history: list[tuple[str, str]] | None,
+) -> str:
+    """Break ties among EU-equal actions: prefer novel movement, then novel interactions."""
+    import random
+
+    tried = {act for act, _ in history} if history else set()
+
+    # Untried movement commands (highest exploration value)
+    untried_moves = [a for a in effective if a.startswith("go ") and a not in tried and a not in failed_here]
+    if untried_moves:
+        return random.choice(untried_moves)
+
+    # Untried object-interaction commands (examine, take, open, etc.)
+    interaction_verbs = ("examine", "take", "open", "unlock", "use", "push", "pull", "eat", "drink")
+    untried_interact = [
+        a for a in effective
+        if any(a.startswith(v) for v in interaction_verbs)
+        and a not in tried and a not in failed_here
+    ]
+    if untried_interact:
+        return random.choice(untried_interact)
+
+    # Any untried action
+    untried = [a for a in effective if a not in tried and a not in failed_here]
+    if untried:
+        return random.choice(untried)
+
+    # All tried — random from effective
+    return random.choice(effective)
 
 
 def _safe_action(valid_actions: list[str], failed: set[str] | None = None) -> str:

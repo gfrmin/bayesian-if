@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from bayesian_if.agent import IFAgent, _safe_action
+from bayesian_if.agent import IFAgent, _exploration_tiebreak, _is_uniform_posterior, _safe_action
 from bayesian_if.categories import infer_category_hint
 from bayesian_if.tools import DEFAULT_TOOLS, LLMAdvisorTool
 from bayesian_if.world import Observation
@@ -208,3 +208,39 @@ def test_default_forgetting():
     agent = IFAgent(world=world)
     # The BayesianAgent stores the forgetting factor
     assert agent.bayesian.forgetting == 0.85
+
+
+# ---------------------------------------------------------------------------
+# Uniform posterior tiebreak
+# ---------------------------------------------------------------------------
+
+def test_is_uniform_posterior():
+    """Detect when confidence equals 1/N (uniform)."""
+    assert _is_uniform_posterior(0.25, 4) is True
+    assert _is_uniform_posterior(0.2, 5) is True
+    assert _is_uniform_posterior(0.5, 2) is True
+    assert _is_uniform_posterior(0.8, 4) is False
+    assert _is_uniform_posterior(0.3, 4) is False
+
+
+def test_exploration_tiebreak_prefers_untried_movement():
+    """Untried 'go' commands should be preferred over other actions."""
+    actions = ["look", "take key", "go north", "go south"]
+    results = {_exploration_tiebreak(actions, set(), None) for _ in range(50)}
+    assert results <= {"go north", "go south"}
+
+
+def test_exploration_tiebreak_prefers_interaction_after_movement():
+    """When all movement is tried, prefer untried object interactions."""
+    actions = ["look", "take key", "go north", "examine box"]
+    history = [("go north", "corridor")]
+    results = {_exploration_tiebreak(actions, set(), history) for _ in range(50)}
+    assert results <= {"take key", "examine box"}
+
+
+def test_exploration_tiebreak_falls_back_to_random():
+    """When everything is tried, pick randomly from effective."""
+    actions = ["look", "go north"]
+    history = [("look", "room"), ("go north", "corridor")]
+    result = _exploration_tiebreak(actions, set(), history)
+    assert result in actions

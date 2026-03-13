@@ -18,9 +18,9 @@ def test_zero_reward_is_ambiguous():
     assert attribute_reward(0.0) is None
 
 
-def test_zero_reward_same_obs_is_wrong():
+def test_zero_reward_same_obs_is_ambiguous():
     obs = Observation(text="A dark room.", score=0, location="room", inventory=("key",))
-    assert attribute_reward(0.0, obs, obs) is False
+    assert attribute_reward(0.0, obs, obs) is None
 
 
 def test_zero_reward_different_location_is_ambiguous():
@@ -51,6 +51,6 @@ def test_intermediate_reward_positive_is_correct():
 
 
 def test_intermediate_reward_zero_unchanged():
-    """Zero intermediate_reward + unchanged state → False (wasted turn)."""
+    """Zero intermediate_reward + unchanged state → None (ambiguous)."""
     obs = Observation(text="A room.", score=0, location="room", inventory=())
-    assert attribute_reward(0.0, obs, obs) is False
+    assert attribute_reward(0.0, obs, obs) is None
