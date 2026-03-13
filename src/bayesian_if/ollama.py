@@ -24,6 +24,7 @@ def ollama_generate(
     prompt: str,
     model: str = "llama3.1",
     temperature: float = 0.3,
+    num_ctx: int = 8192,
     base_url: str = _DEFAULT_BASE_URL,
 ) -> str:
     """Send a generate request to Ollama and return the response text."""
@@ -34,7 +35,7 @@ def ollama_generate(
 
     resp = httpx.post(
         f"{base_url}/api/generate",
-        json={"model": model, "prompt": prompt, "stream": False, "options": {"temperature": temperature}},
+        json={"model": model, "prompt": prompt, "stream": False, "options": {"temperature": temperature, "num_ctx": num_ctx}},
         timeout=60.0,
     )
     resp.raise_for_status()

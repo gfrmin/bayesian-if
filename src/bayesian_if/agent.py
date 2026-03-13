@@ -114,7 +114,7 @@ class IFAgent:
             )
 
         # Build the tool query function that BayesianAgent will call
-        recent_history = self._history[-5:] if self._history else None
+        recent_history = self._history or None
         tool_recommendations: dict[int, int | None] = {}
 
         def tool_query_fn(tool_idx: int) -> int | None:

@@ -353,8 +353,8 @@ class LLMAdvisorTool(IFTool):
         if observation.objective:
             context_parts.append(f"Objective: {observation.objective}")
         if history:
-            history_lines = [f"  > {act} -> {res}" for act, res in history[-5:]]
-            context_parts.append("Recent history:\n" + "\n".join(history_lines))
+            history_lines = [f"  > {act} -> {res}" for act, res in history]
+            context_parts.append("Actions taken so far:\n" + "\n".join(history_lines))
         if failed_actions:
             context_parts.append(
                 "Actions already tried without success: "
