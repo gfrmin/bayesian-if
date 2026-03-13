@@ -6,7 +6,7 @@ license = "AGPL-3.0-only"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "credence-router>=0.2.0",
+    "credence-router>=0.3.1",
     "numpy>=1.24",
     "textworld>=1.7.0",
 ]
@@ -48,7 +48,7 @@ line-length = 99
 
 [dependency-groups]
 dev = [
-    "credence-router>=0.2.0",
+    "credence-router>=0.3.1",
     "httpx>=0.25",
     "numpy>=1.24",
     "pytest-cov>=6.1.1",

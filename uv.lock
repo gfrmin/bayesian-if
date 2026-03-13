@@ -79,7 +79,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bayesian-if", extras = ["jericho", "ollama", "dev"], marker = "extra == 'all'" },
-    { name = "credence-router", specifier = ">=0.2.0" },
+    { name = "credence-router", specifier = ">=0.3.1" },
     { name = "httpx", marker = "extra == 'ollama'", specifier = ">=0.25" },
     { name = "jericho", marker = "extra == 'jericho'", specifier = ">=3.0" },
     { name = "numpy", specifier = ">=1.24" },
@@ -93,7 +93,7 @@ provides-extras = ["jericho", "textworld", "ollama", "dev", "all"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "credence-router", specifier = ">=0.2.0" },
+    { name = "credence-router", specifier = ">=0.3.1" },
     { name = "httpx", specifier = ">=0.25" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "pytest", specifier = ">=7.4" },
@@ -380,28 +380,28 @@ toml = [
 
 [[package]]
 name = "credence-agents"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "scipy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/57/45/ef71795e9eec63ad592924a7cdc27ace03e797da1029cb69748672dbaf3a/credence_agents-0.2.0.tar.gz", hash = "sha256:55a6b5eb48dbd4ffe36b5ac2ea5c307f2dbdf3954e5d9a02959d8233966a806d", size = 62104, upload-time = "2026-03-12T15:06:24.989Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/bc/6b391c81934b91eff92614485f7dfded28cbf78237d501faab6dc9ed6d02/credence_agents-0.3.0.tar.gz", hash = "sha256:987744c172ef5e6281d384b6260c4ff3db926ec21fa097ac7f3f45b306587f49", size = 64576, upload-time = "2026-03-13T18:23:16.395Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/65/66/efa57ba8835b1d75197a2ba67e86a4cd69340ca5a71c90a360074130ec9e/credence_agents-0.2.0-py3-none-any.whl", hash = "sha256:f8d008f78ca3c314805dbf86550f55c2568f16d3ef8f1e599871717c73b8883b", size = 47783, upload-time = "2026-03-12T15:06:23.396Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/cb/1b45efe0554063b299e4663e39c9336a96bb22ff5b006d8b03c96cca0b27/credence_agents-0.3.0-py3-none-any.whl", hash = "sha256:77616454c25978d7bd058fecf5ac0adef165aac57751e5bfcd575bae3af67e35", size = 48494, upload-time = "2026-03-13T18:23:14.797Z" },
 ]
 
 [[package]]
 name = "credence-router"
-version = "0.2.0"
+version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "credence-agents" },
     { name = "numpy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9f/be/03d512f22a1b61da74d4d4f5d5b71fcd81ead990d9bbf122dd0254a80005/credence_router-0.2.0.tar.gz", hash = "sha256:92da55d5669f694d812fd5e0dd1fb22ef6617f69a7d9d6f0aceee110a2512719", size = 149134, upload-time = "2026-03-12T18:51:01.275Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/64/48/386b319617f157845eaabb7bf8a3297459748a10ea993a7e525b25fbb4aa/credence_router-0.3.1.tar.gz", hash = "sha256:af6eb460966ea6fd8dcaa15d485ef4cc0b35002f1698154b90da41dfeb37b21e", size = 155490, upload-time = "2026-03-13T20:10:41.644Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a2/78/eac20c703d328f0a6ad9f0fab78044b79d52c2b96d0a0bdd25ed259c54fe/credence_router-0.2.0-py3-none-any.whl", hash = "sha256:6721370861c27202a369052d7bf4195e3e5ba659c8223f004358b2eee04c0b4e", size = 41747, upload-time = "2026-03-12T18:50:58.861Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/29/972404f6306f2b7aa2ea68aefe9723a4b9ffbd8956723628923d6f91a569/credence_router-0.3.1-py3-none-any.whl", hash = "sha256:52dd5f5f914d1ed86b089e5a32354045196129f21a0db0671ba433e09c77a64a", size = 47234, upload-time = "2026-03-13T20:10:39.42Z" },
 ]
 
 [[package]]

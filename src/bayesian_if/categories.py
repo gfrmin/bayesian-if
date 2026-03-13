@@ -8,6 +8,8 @@ from typing import Callable
 import numpy as np
 from numpy.typing import NDArray
 
+from credence_router.categories import make_keyword_category_infer_fn
+
 CATEGORIES: tuple[str, ...] = ("exploration", "puzzle", "inventory", "dialogue", "combat")
 NUM_CATEGORIES: int = len(CATEGORIES)
 
@@ -67,18 +69,9 @@ def make_if_category_infer_fn(
 ) -> Callable[[str], NDArray[np.float64]]:
     """Return a function that classifies game-state text into a category distribution.
 
-    Uses keyword matching with a Dirichlet-like weighting: each keyword match
-    adds weight to the corresponding category, then normalise.
+    Uses keyword matching with count-proportional weighting via the shared
+    make_keyword_category_infer_fn with count_matches=True.
     """
-
-    def infer(text: str) -> NDArray[np.float64]:
-        weights = np.ones(len(categories), dtype=np.float64)  # uniform base
-        for i, cat in enumerate(categories):
-            patterns = _CATEGORY_PATTERNS.get(cat, [])
-            for pat in patterns:
-                matches = pat.findall(text)
-                weights[i] += len(matches) * 2.0  # each match boosts that category
-        total = weights.sum()
-        return weights / total
-
-    return infer
+    return make_keyword_category_infer_fn(
+        categories, _CATEGORY_PATTERNS, match_boost=2.0, count_matches=True,
+    )

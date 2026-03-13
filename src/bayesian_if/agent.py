@@ -12,11 +12,11 @@ from credence import BayesianAgent, ScoringRule
 
 from bayesian_if.categories import CATEGORIES, infer_category_hint, make_if_category_infer_fn
 from bayesian_if.reward import attribute_reward
-from bayesian_if.tools import DEFAULT_TOOLS, IFTool
+from bayesian_if.tools import DEFAULT_TOOLS, IFTool, LLMAdvisorTool
 from bayesian_if.world import Observation, World
 
-# Mild asymmetry: wrong IF actions waste a turn but aren't catastrophic.
-IF_SCORING = ScoringRule(reward_correct=1.0, penalty_wrong=-0.2, reward_abstain=0.0)
+# Initial prior — adapted online from observed score deltas.
+IF_SCORING = ScoringRule(reward_correct=1.0, penalty_wrong=-0.5, reward_abstain=-0.05)
 
 
 @dataclass
@@ -85,6 +85,16 @@ class IFAgent:
             forgetting=forgetting,
             scoring=self.scoring,
         )
+
+        # Warm-start LLM reliability to r_eff=0.7 so it has nonzero VOI
+        for i, tool in enumerate(self.if_tools):
+            if isinstance(tool, LLMAdvisorTool):
+                self.bayesian.reliability_table[i, :, 0] = 7.0   # alpha
+                self.bayesian.reliability_table[i, :, 1] = 3.0   # beta → r_eff=0.7
+
+        # EMA trackers for online scoring rule adaptation
+        self._ema_reward: float = 1.0
+        self._ema_penalty: float = -0.5
 
     def play_step(self, observation: Observation) -> tuple[str, StepRecord]:
         """One game step: gather info via VOI, choose action, return action string."""
@@ -181,6 +191,19 @@ class IFAgent:
                 self._failed_actions.pop(prev_obs.location, None)
             elif reward <= 0 and obs.score == prev_obs.score and obs.intermediate_reward <= 0:
                 self._failed_actions.setdefault(prev_obs.location, set()).add(action)
+
+            # Adapt scoring rule from observed score deltas
+            score_delta = obs.score - prev_obs.score
+            if score_delta > 0:
+                self._ema_reward = 0.7 * self._ema_reward + 0.3 * score_delta
+            elif score_delta < 0:
+                self._ema_penalty = 0.7 * self._ema_penalty + 0.3 * score_delta
+
+            self.bayesian.scoring = ScoringRule(
+                reward_correct=max(self._ema_reward, 0.1),
+                penalty_wrong=min(self._ema_penalty, -0.1),
+                reward_abstain=min(-0.05 * abs(self._ema_reward), -0.01),
+            )
 
             # Attribute reward for reliability learning
             was_correct = attribute_reward(reward, prev_obs, obs)
