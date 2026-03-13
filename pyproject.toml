@@ -6,7 +6,7 @@ license = "AGPL-3.0-only"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "credence-agents>=0.1.0",
+    "credence-router>=0.2.0",
     "numpy>=1.24",
     "textworld>=1.7.0",
 ]
@@ -45,12 +45,10 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 99
 
-[tool.uv.sources]
-credence-agents = { path = "../credence", editable = true }
 
 [dependency-groups]
 dev = [
-    "credence-agents",
+    "credence-router>=0.2.0",
     "httpx>=0.25",
     "numpy>=1.24",
     "pytest-cov>=6.1.1",

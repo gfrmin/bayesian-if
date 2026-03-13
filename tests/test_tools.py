@@ -5,7 +5,6 @@ from bayesian_if.tools import (
     InventoryTool,
     LLMAdvisorTool,
     LookTool,
-    SimulationTool,
     _best_action_matching,
     _extract_keywords,
     _extract_verb,
@@ -429,62 +428,6 @@ def test_llm_prompt_includes_failed_actions():
     assert "examine insect" in prompts[0]
     assert "take insect" in prompts[0]
     assert "Avoid repeating" in prompts[0]
-
-
-# ---------------------------------------------------------------------------
-# SimulationTool
-# ---------------------------------------------------------------------------
-
-def test_simulation_tool_finds_reward():
-    """SimulationTool should find the action with positive reward."""
-    world = MockWorld()
-    world.reset()
-    obs = Observation(text="A room.", score=0, location="Start Room")
-    actions = world.valid_actions()
-
-    tool = SimulationTool()
-    result = tool.query(world, obs, actions)
-    # "take key" gives +5 reward
-    assert result is not None
-    assert actions[result] == "take key"
-
-
-def test_simulation_tool_no_reward():
-    """SimulationTool returns None when no action gives positive reward."""
-    world = MockWorld()
-    world.reset()
-    # Move to hallway where no action gives immediate reward
-    world.step("take key")
-    world.step("go north")
-    obs = Observation(text="A hallway.", score=6, location="Hallway")
-    actions = ["go south", "go north"]
-
-    tool = SimulationTool()
-    result = tool.query(world, obs, actions)
-    # "go north" gives +1 for first visit to treasure room
-    assert result is not None
-    assert actions[result] == "go north"
-
-
-def test_simulation_tool_does_not_consume_turn():
-    """SimulationTool should not alter world state."""
-    world = MockWorld()
-    world.reset()
-    obs = Observation(text="A room.", score=0, location="Start Room")
-    actions = world.valid_actions()
-
-    tool = SimulationTool()
-    tool.query(world, obs, actions)
-
-    # World should still be in initial state
-    assert world.valid_actions() == actions
-
-
-def test_simulation_tool_coverage():
-    """SimulationTool should have high puzzle coverage, low exploration."""
-    tool = SimulationTool()
-    config = tool.to_tool_config(("exploration", "puzzle", "inventory"))
-    assert config.coverage_by_category[1] > config.coverage_by_category[0]  # puzzle > exploration
 
 
 # ---------------------------------------------------------------------------

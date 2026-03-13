@@ -389,44 +389,5 @@ class LLMAdvisorTool(IFTool):
         return np.full(len(categories), 0.7)
 
 
-class SimulationTool(IFTool):
-    """Try each candidate action via save/restore, return the one with highest reward."""
-
-    name = "simulate"
-    cost = 0.0
-
-    def query(
-        self,
-        world: World,
-        observation: Observation,
-        valid_actions: list[str],
-        *,
-        history: list[tuple[str, str]] | None = None,
-        failed_actions: set[str] | None = None,
-    ) -> int | None:
-        best_idx: int | None = None
-        best_reward = 0.0
-        for i, action in enumerate(valid_actions):
-            snapshot = world.save()
-            try:
-                _, reward, _ = world.step(action)
-                if reward > best_reward:
-                    best_reward = reward
-                    best_idx = i
-            finally:
-                world.restore(snapshot)
-        return best_idx
-
-    def _coverage(self, categories: tuple[str, ...]) -> np.ndarray:
-        coverage = {
-            "exploration": 0.3,
-            "puzzle": 0.95,
-            "inventory": 0.8,
-            "dialogue": 0.2,
-            "combat": 0.7,
-        }
-        return np.array([coverage.get(c, 0.5) for c in categories])
-
-
-DEFAULT_TOOLS: list[IFTool] = [LookTool(), ExamineTool(), InventoryTool(), SimulationTool()]
+DEFAULT_TOOLS: list[IFTool] = [LookTool(), ExamineTool(), InventoryTool()]
 """Default tools (no LLM). Add LLMAdvisorTool separately when Ollama is available."""
