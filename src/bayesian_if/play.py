@@ -25,26 +25,35 @@ def main(argv: list[str] | None = None) -> None:
     # Create world
     if args.game:
         from bayesian_if.jericho_world import JerichoWorld
+
         world = JerichoWorld(args.game)
         print(f"Loaded Jericho game: {args.game}")
     elif args.textworld:
         from bayesian_if.textworld_world import TextWorldWorld
+
         if args.tw_game:
             game_file = args.tw_game
         else:
             import tempfile
             import subprocess
+
             tmpdir = tempfile.mkdtemp(prefix="tw_")
             game_file = f"{tmpdir}/tw_game.z8"
             difficulty = args.tw_difficulty
             subprocess.run(
                 [
-                    "tw-make", "custom",
-                    "--world-size", str(difficulty),
-                    "--nb-objects", str(difficulty + 2),
-                    "--quest-length", str(difficulty),
-                    "--seed", "42",
-                    "--output", game_file,
+                    "tw-make",
+                    "custom",
+                    "--world-size",
+                    str(difficulty),
+                    "--nb-objects",
+                    str(difficulty + 2),
+                    "--quest-length",
+                    str(difficulty),
+                    "--seed",
+                    "42",
+                    "--output",
+                    game_file,
                 ],
                 check=True,
             )
@@ -68,19 +77,18 @@ def main(argv: list[str] | None = None) -> None:
     result = agent.play_game(max_steps=args.max_steps)
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Game finished after {result.steps_taken} steps")
     print(f"Final score: {result.final_score}")
 
-    if result.reliability_table is not None and args.verbose:
-        print("\nLearned reliability table:")
+    if result.reliability_means is not None and args.verbose:
+        print("\nLearned reliability (mean per category):")
         from bayesian_if.categories import CATEGORIES
+
         for t_idx, tool in enumerate(tools):
             reliabilities = []
             for c_idx, cat in enumerate(CATEGORIES):
-                alpha = result.reliability_table[t_idx, c_idx, 0]
-                beta = result.reliability_table[t_idx, c_idx, 1]
-                r = alpha / (alpha + beta)
+                r = result.reliability_means[t_idx][c_idx]
                 reliabilities.append(f"{cat}={r:.2f}")
             print(f"  {tool.name}: {', '.join(reliabilities)}")
 

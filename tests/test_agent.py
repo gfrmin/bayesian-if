@@ -1,7 +1,5 @@
 """Tests for the IFAgent — full integration with mock world."""
 
-import numpy as np
-
 from bayesian_if.agent import IFAgent, _exploration_tiebreak, _is_uniform_posterior, _safe_action
 from bayesian_if.categories import infer_category_hint
 from bayesian_if.tools import DEFAULT_TOOLS, LLMAdvisorTool
@@ -32,7 +30,7 @@ def test_agent_with_llm_mock():
     result = agent.play_game(max_steps=20)
 
     assert result.steps_taken > 0
-    assert result.reliability_table is not None
+    assert result.reliability_means is not None
 
 
 def test_agent_verbose_mode(capsys):
@@ -51,6 +49,7 @@ def test_reliability_table_updates():
 
     # Use an LLM that sometimes gives good advice
     call_count = 0
+
     def mock_llm(prompt: str) -> str:
         nonlocal call_count
         call_count += 1
@@ -61,12 +60,10 @@ def test_reliability_table_updates():
     agent = IFAgent(world=world, tools=tools)
     result = agent.play_game(max_steps=30)
 
-    # At least some reliability entries should have moved from Beta(1,1)
-    table = result.reliability_table
-    assert table is not None
-    # Check that not all entries are still (1.0, 1.0)
-    deviations = np.abs(table[:, :, 0] - 1.0) + np.abs(table[:, :, 1] - 1.0)
-    assert np.any(deviations > 0.01), "Reliability table should have been updated"
+    # At least some reliability means should have moved from 0.5 (Beta(1,1) uniform mean)
+    means = result.reliability_means
+    assert means is not None
+    assert any(abs(m - 0.5) > 0.01 for row in means for m in row)
 
 
 def test_agent_records_steps():
@@ -98,7 +95,6 @@ def test_play_step_with_no_valid_actions():
     agent = IFAgent(world=world)
     # Create a patched world that returns no actions
 
-
     def empty_actions() -> list[str]:
         return []
 
@@ -110,6 +106,7 @@ def test_play_step_with_no_valid_actions():
 # ---------------------------------------------------------------------------
 # Phase 1: Failed-action memory
 # ---------------------------------------------------------------------------
+
 
 def test_agent_suppresses_failed_actions():
     """Zero-reward action at same location should not be repeated."""
@@ -153,6 +150,7 @@ def test_failed_actions_cleared_on_reward():
 # Phase 3: _safe_action prefers movement
 # ---------------------------------------------------------------------------
 
+
 def test_safe_action_prefers_movement():
     """When no local actions are needed, movement should be preferred."""
     actions = ["look", "wait", "go north", "go south", "take key"]
@@ -173,6 +171,7 @@ def test_safe_action_falls_back_to_look():
 # ---------------------------------------------------------------------------
 # Phase 5: Category hints
 # ---------------------------------------------------------------------------
+
 
 def test_category_hint_puzzle_with_key():
     """Having a key in inventory should hint 'puzzle'."""
@@ -202,6 +201,7 @@ def test_category_hint_exploration():
 # Phase 6: Forgetting default
 # ---------------------------------------------------------------------------
 
+
 def test_default_forgetting():
     """Default forgetting factor should be 0.85."""
     world = MockWorld()
@@ -213,6 +213,7 @@ def test_default_forgetting():
 # ---------------------------------------------------------------------------
 # Uniform posterior tiebreak
 # ---------------------------------------------------------------------------
+
 
 def test_is_uniform_posterior():
     """Detect when confidence equals 1/N (uniform)."""

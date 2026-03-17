@@ -5,10 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
-import numpy as np
-from numpy.typing import NDArray
-
 from credence import BayesianAgent, ScoringRule
+from credence.julia_bridge import CredenceBridge
 
 from bayesian_if.categories import CATEGORIES, infer_category_hint, make_if_category_infer_fn
 from bayesian_if.reward import attribute_reward
@@ -43,7 +41,7 @@ class GameResult:
     final_score: int
     steps_taken: int
     steps: list[StepRecord] = field(default_factory=list)
-    reliability_table: NDArray[np.float64] | None = None
+    reliability_means: list[list[float]] | None = None
 
 
 class IFAgent:
@@ -60,10 +58,11 @@ class IFAgent:
         world: World,
         tools: list[IFTool] | None = None,
         categories: tuple[str, ...] = CATEGORIES,
-        category_infer_fn: Callable[[str], NDArray] | None = None,
+        category_infer_fn: Callable[[str], list[float]] | None = None,
         scoring: ScoringRule = IF_SCORING,
         forgetting: float = 0.85,
         verbose: bool = False,
+        bridge: CredenceBridge | None = None,
     ) -> None:
         self.world = world
         self.if_tools = tools if tools is not None else list(DEFAULT_TOOLS)
@@ -73,12 +72,15 @@ class IFAgent:
         self._history: list[tuple[str, str]] = []
         self._failed_actions: dict[str | None, set[str]] = {}
 
+        self._bridge = bridge or CredenceBridge()
+
         if category_infer_fn is None:
             category_infer_fn = make_if_category_infer_fn(categories)
 
         tool_configs = [t.to_tool_config(categories) for t in self.if_tools]
 
         self.bayesian = BayesianAgent(
+            bridge=self._bridge,
             tool_configs=tool_configs,
             categories=categories,
             category_infer_fn=category_infer_fn,
@@ -89,8 +91,9 @@ class IFAgent:
         # Warm-start LLM reliability to r_eff=0.7 so it has nonzero VOI
         for i, tool in enumerate(self.if_tools):
             if isinstance(tool, LLMAdvisorTool):
-                self.bayesian.reliability_table[i, :, 0] = 7.0   # alpha
-                self.bayesian.reliability_table[i, :, 1] = 3.0   # beta → r_eff=0.7
+                self.bayesian.rel_states[i] = self._bridge.make_warm_rel_state(
+                    self.bayesian._num_categories, alpha=7.0, beta=3.0
+                )
 
         # EMA trackers for online scoring rule adaptation
         self._ema_reward: float = 1.0
@@ -102,10 +105,14 @@ class IFAgent:
 
         if not valid_actions:
             return "look", StepRecord(
-                step=0, observation_text=observation.text,
-                valid_actions=[], chosen_action="look",
-                tools_queried=(), confidence=0.0,
-                reward=0.0, cumulative_score=observation.score,
+                step=0,
+                observation_text=observation.text,
+                valid_actions=[],
+                chosen_action="look",
+                tools_queried=(),
+                confidence=0.0,
+                reward=0.0,
+                cumulative_score=observation.score,
             )
 
         # Filter out actions that failed at this location
@@ -117,10 +124,14 @@ class IFAgent:
         if len(effective) == 1:
             chosen = effective[0]
             return chosen, StepRecord(
-                step=0, observation_text=observation.text,
-                valid_actions=valid_actions, chosen_action=chosen,
-                tools_queried=(), confidence=1.0,
-                reward=0.0, cumulative_score=observation.score,
+                step=0,
+                observation_text=observation.text,
+                valid_actions=valid_actions,
+                chosen_action=chosen,
+                tools_queried=(),
+                confidence=1.0,
+                reward=0.0,
+                cumulative_score=observation.score,
             )
 
         # Build the tool query function that BayesianAgent will call
@@ -129,8 +140,11 @@ class IFAgent:
 
         def tool_query_fn(tool_idx: int) -> int | None:
             result = self.if_tools[tool_idx].query(
-                self.world, observation, effective,
-                history=recent_history, failed_actions=failed_here,
+                self.world,
+                observation,
+                effective,
+                history=recent_history,
+                failed_actions=failed_here,
             )
             tool_recommendations[tool_idx] = result
             return result
@@ -148,7 +162,9 @@ class IFAgent:
         if result.answer is not None and result.answer < len(effective):
             if _is_uniform_posterior(result.confidence, len(effective)):
                 chosen_action = _exploration_tiebreak(
-                    effective, failed_here, self._history,
+                    effective,
+                    failed_here,
+                    self._history,
                 )
             else:
                 chosen_action = effective[result.answer]
@@ -233,8 +249,11 @@ class IFAgent:
             final_score=obs.score,
             steps_taken=len(steps),
             steps=steps,
-            reliability_table=self.bayesian.reliability_table.copy(),
+            reliability_means=self._get_reliability_means(),
         )
+
+    def _get_reliability_means(self) -> list[list[float]]:
+        return [self._bridge.extract_reliability_means(rs) for rs in self.bayesian.rel_states]
 
 
 def _is_uniform_posterior(confidence: float, n_candidates: int, tol: float = 1e-6) -> bool:
@@ -253,16 +272,30 @@ def _exploration_tiebreak(
     tried = {act for act, _ in history} if history else set()
 
     # Untried movement commands (highest exploration value)
-    untried_moves = [a for a in effective if a.startswith("go ") and a not in tried and a not in failed_here]
+    untried_moves = [
+        a for a in effective if a.startswith("go ") and a not in tried and a not in failed_here
+    ]
     if untried_moves:
         return random.choice(untried_moves)
 
     # Untried object-interaction commands (examine, take, open, etc.)
-    interaction_verbs = ("examine", "take", "open", "unlock", "use", "push", "pull", "eat", "drink")
+    interaction_verbs = (
+        "examine",
+        "take",
+        "open",
+        "unlock",
+        "use",
+        "push",
+        "pull",
+        "eat",
+        "drink",
+    )
     untried_interact = [
-        a for a in effective
+        a
+        for a in effective
         if any(a.startswith(v) for v in interaction_verbs)
-        and a not in tried and a not in failed_here
+        and a not in tried
+        and a not in failed_here
     ]
     if untried_interact:
         return random.choice(untried_interact)
