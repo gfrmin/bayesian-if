@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from credence import BayesianAgent, ScoringRule
-from credence.julia_bridge import CredenceBridge
+from credence_agents.julia_bridge import CredenceBridge
 
 from bayesian_if.categories import CATEGORIES, infer_category_hint, make_if_category_infer_fn
 from bayesian_if.reward import attribute_reward
